@@ -107,12 +107,23 @@ lib/
 │
 ├── providers/
 │   └── post_provider.dart
+|
+├── models/
+│   └── post_model.dart
+|   └── story_model.dart
 │
+├── services/
+│   └── port_repository.dart
+|
 ├── screens/
 │   └── home_feed_screen.dart
 │
 ├── widgets/
 │   ├── post_card.dart
+|   ├── post_carousel.dart
+|   ├── post_header.dart
+|   ├── post_caption.dart
+|   ├── post_action.dart
 │   ├── story_avatar.dart
 │   ├── shimmer_post.dart
 │   └── shimmer_story.dart
@@ -152,13 +163,13 @@ flutter doctor
 ## Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY_NAME.git
+git clone https://github.com/veerendrasoni07/ZRex-Assignment-.git
 ```
 
 Navigate into the project directory:
 
 ```bash
-cd YOUR_REPOSITORY_NAME
+cd ZRex-Assignment-
 ```
 
 ---
@@ -195,29 +206,7 @@ The APK will be generated at:
 build/app/outputs/flutter-apk/app-release.apk
 ```
 
----
 
-# Screenshots
-
-Add screenshots of the application UI.
-
-Example structure:
-
-```
-screenshots/
-├── feed.png
-├── stories.png
-└── loading.png
-```
-
-Then reference them like this:
-
-```
-![Feed Screen](screenshots/feed.png)
-![Stories](screenshots/stories.png)
-```
-
----
 
 # Key Concepts Demonstrated
 
