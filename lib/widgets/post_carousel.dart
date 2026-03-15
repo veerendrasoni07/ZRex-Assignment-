@@ -46,7 +46,7 @@ class _PostCarouselState extends State<PostCarousel> {
                   maxScale: PhotoViewComputedScale.covered * 3,
                 );
               },
-              scrollPhysics: const BouncingScrollPhysics(),
+              scrollPhysics: const ClampingScrollPhysics(),
               backgroundDecoration: const BoxDecoration(
                 color: Colors.black,
               ),
