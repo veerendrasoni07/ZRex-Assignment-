@@ -1,8 +1,11 @@
 ﻿import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-
+import 'package:photo_view/photo_view.dart';
+import 'package:photo_view/photo_view_gallery.dart';
 import '../core/constants/app_colors.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+
 
 class PostCarousel extends StatefulWidget {
   const PostCarousel({super.key, required this.imageUrls});
@@ -14,7 +17,7 @@ class PostCarousel extends StatefulWidget {
 }
 
 class _PostCarouselState extends State<PostCarousel> {
-  final PageController _controller = PageController();
+  final PhotoViewController _controller = PhotoViewController();
   int _currentPage = 0;
 
   @override
@@ -29,13 +32,25 @@ class _PostCarouselState extends State<PostCarousel> {
       children: [
         AspectRatio(
           aspectRatio: 1,
-          child: PageView.builder(
-            controller: _controller,
-            itemCount: widget.imageUrls.length,
-            onPageChanged: (index) => setState(() => _currentPage = index),
-            itemBuilder: (context, index) {
-              return _ZoomableImage(imageUrl: widget.imageUrls[index]);
-            },
+          child: SizedBox(
+            width: MediaQuery.of(context).size.width,
+            height: MediaQuery.of(context).size.width,
+            child: PhotoViewGallery.builder(
+              itemCount: widget.imageUrls.length,
+              onPageChanged: (index) => setState(() => _currentPage = index),
+              builder: (context, index) {
+                return PhotoViewGalleryPageOptions(
+                  controller: _controller,
+                  imageProvider: CachedNetworkImageProvider(widget.imageUrls[index]),
+                  minScale: PhotoViewComputedScale.contained,
+                  maxScale: PhotoViewComputedScale.covered * 3,
+                );
+              },
+              scrollPhysics: const BouncingScrollPhysics(),
+              backgroundDecoration: const BoxDecoration(
+                color: Colors.black,
+              ),
+            ),
           ),
         ),
         if (widget.imageUrls.length > 1)
@@ -63,27 +78,32 @@ class _PostCarouselState extends State<PostCarousel> {
   }
 }
 
-class _ZoomableImage extends StatefulWidget {
-  const _ZoomableImage({required this.imageUrl});
 
+class ZoomableImage extends StatefulWidget {
   final String imageUrl;
 
+  const ZoomableImage({super.key, required this.imageUrl});
+
   @override
-  State<_ZoomableImage> createState() => _ZoomableImageState();
+  State<ZoomableImage> createState() => _ZoomableImageState();
 }
 
-class _ZoomableImageState extends State<_ZoomableImage> with TickerProviderStateMixin {
+class _ZoomableImageState extends State<ZoomableImage>
+    with SingleTickerProviderStateMixin {
+
   OverlayEntry? _overlayEntry;
-  double _scale = 1.0;
-  Offset _offset = Offset.zero;
-  Offset _startFocal = Offset.zero;
+
+  Matrix4 _matrix = Matrix4.identity();
+
   late AnimationController _resetController;
-  VoidCallback? _resetTick;
-  AnimationStatusListener? _resetStatusListener;
+
+  Offset _startFocal = Offset.zero;
+  Matrix4 _startMatrix = Matrix4.identity();
 
   @override
   void initState() {
     super.initState();
+
     _resetController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 220),
@@ -92,47 +112,31 @@ class _ZoomableImageState extends State<_ZoomableImage> with TickerProviderState
 
   @override
   void dispose() {
-    if (_resetTick != null) {
-      _resetController.removeListener(_resetTick!);
-    }
-    if (_resetStatusListener != null) {
-      _resetController.removeStatusListener(_resetStatusListener!);
-    }
     _resetController.dispose();
-    _removeOverlay();
+    _overlayEntry?.remove();
     super.dispose();
   }
 
   void _showOverlay() {
-    if (_overlayEntry != null) {
-      return;
-    }
+    if (_overlayEntry != null) return;
 
     _overlayEntry = OverlayEntry(
       builder: (context) {
-        final double backdropOpacity = (_scale - 1).clamp(0, 0.6);
+        final scale = _matrix.getMaxScaleOnAxis();
+        double opacity = (scale - 1).clamp(0, 0.6);
+
         return Stack(
           children: [
             Positioned.fill(
               child: Container(
-                color: Colors.black.withOpacity(backdropOpacity),
+                color: Colors.black.withOpacity(opacity),
               ),
             ),
             Positioned.fill(
-              child: IgnorePointer(
-                ignoring: false,
-                child: Center(
-                  child: Transform.translate(
-                    offset: _offset,
-                    child: Transform.scale(
-                      scale: _scale,
-                      child: SizedBox(
-                        width: MediaQuery.of(context).size.width,
-                        height: MediaQuery.of(context).size.width,
-                        child: _buildImage(),
-                      ),
-                    ),
-                  ),
+              child: Center(
+                child: Transform(
+                  transform: _matrix,
+                  child: _buildImage(),
                 ),
               ),
             ),
@@ -144,81 +148,81 @@ class _ZoomableImageState extends State<_ZoomableImage> with TickerProviderState
     Overlay.of(context, rootOverlay: true).insert(_overlayEntry!);
   }
 
-  void _removeOverlay() {
-    _overlayEntry?.remove();
-    _overlayEntry = null;
-  }
-
-  // Pinch-to-zoom uses a temporary Overlay so the image can scale
-  // above the rest of the UI and then animate back to its place.
   void _onScaleStart(ScaleStartDetails details) {
     _resetController.stop();
-    _scale = 1.0;
-    _offset = Offset.zero;
+
     _startFocal = details.focalPoint;
+    _startMatrix = _matrix.clone();
+
     _showOverlay();
-    _overlayEntry?.markNeedsBuild();
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
-    _scale = details.scale.clamp(1.0, 3.0);
-    _offset = details.focalPoint - _startFocal;
+
+    final scale = details.scale;
+
+    final dx = details.focalPoint.dx - _startFocal.dx;
+    final dy = details.focalPoint.dy - _startFocal.dy;
+
+    final translation = Matrix4.identity()
+      ..translate(dx, dy);
+
+    final scaling = Matrix4.identity()
+      ..translate(details.focalPoint.dx, details.focalPoint.dy)
+      ..scale(scale)
+      ..translate(-details.focalPoint.dx, -details.focalPoint.dy);
+
+    _matrix = translation * scaling * _startMatrix;
+
     _overlayEntry?.markNeedsBuild();
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
-    final double startScale = _scale;
-    final Offset startOffset = _offset;
+
+    final Matrix4 beginMatrix = _matrix;
+    final Matrix4 endMatrix = Matrix4.identity();
 
     _resetController.reset();
-    if (_resetTick != null) {
-      _resetController.removeListener(_resetTick!);
-    }
-    if (_resetStatusListener != null) {
-      _resetController.removeStatusListener(_resetStatusListener!);
-    }
 
-    _resetTick = () {
-      final double t = Curves.easeOut.transform(_resetController.value);
-      _scale = startScale + (1.0 - startScale) * t;
-      _offset = Offset.lerp(startOffset, Offset.zero, t) ?? Offset.zero;
+    _resetController.addListener(() {
+
+      final t = Curves.easeOut.transform(_resetController.value);
+
+      _matrix = Matrix4Tween(
+        begin: beginMatrix,
+        end: endMatrix,
+      ).transform(t);
+
       _overlayEntry?.markNeedsBuild();
-    };
-    _resetStatusListener = (status) {
-      if (status == AnimationStatus.completed) {
-        if (_resetTick != null) {
-          _resetController.removeListener(_resetTick!);
-        }
-        if (_resetStatusListener != null) {
-          _resetController.removeStatusListener(_resetStatusListener!);
-        }
-        _removeOverlay();
-      }
-    };
-    _resetController.addListener(_resetTick!);
-    _resetController.addStatusListener(_resetStatusListener!);
-    _resetController.forward();
+    });
+
+    _resetController.forward().whenComplete(() {
+      _overlayEntry?.remove();
+      _overlayEntry = null;
+      _matrix = Matrix4.identity();
+    });
   }
 
   Widget _buildImage() {
-    return CachedNetworkImage(
-      imageUrl: widget.imageUrl,
-      fit: BoxFit.cover,
-      placeholder: (context, _) => Container(color: AppColors.shimmerBase),
-      errorWidget: (context, _, __) => Container(
-        color: AppColors.shimmerBase,
-        child: const Icon(Icons.broken_image, color: AppColors.textSecondary),
+    return InteractiveViewer(
+      minScale: 0.5,
+      maxScale: 4.0,
+      panEnabled: true,
+      scaleEnabled: true,
+      boundaryMargin: EdgeInsets.all(double.infinity),
+      child: SizedBox(
+        width: MediaQuery.of(context).size.width,
+        height: MediaQuery.of(context).size.width,
+        child: CachedNetworkImage(
+          imageUrl: widget.imageUrl,
+          fit: BoxFit.cover,
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onScaleStart: _onScaleStart,
-      onScaleUpdate: _onScaleUpdate,
-      onScaleEnd: _onScaleEnd,
-      child: _buildImage(),
-    );
+    return _buildImage();
   }
 }
